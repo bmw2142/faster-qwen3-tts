@@ -4,7 +4,7 @@ Faster Qwen3-TTS Demo Server
 
 Usage:
     python demo/server.py
-    python demo/server.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --port 7860
+    python demo/server.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --port 7860 --device cuda:1
     python demo/server.py --no-preload  # skip startup model load
 """
 
@@ -62,40 +62,13 @@ else:
 BASE_DIR = Path(__file__).resolve().parent
 # Assets that need to be downloaded at runtime go to a writable directory.
 # /app is read-only in HF Spaces; fall back to /tmp.
-_ASSET_DIR = Path(os.environ.get("ASSET_DIR", "/tmp/faster-qwen3-tts-assets"))
-PRESET_TRANSCRIPTS = _ASSET_DIR / "samples" / "parity" / "icl_transcripts.txt"
+_ASSET_DIR = Path(os.environ.get("ASSET_DIR", "/data/jp-storage/GG/TTS_Project/faster-qwen3-tts/ref_audio"))
+PRESET_TRANSCRIPTS = _ASSET_DIR / "icl_transcripts.txt"
 PRESET_REFS = [
-    ("ref_audio_3", _ASSET_DIR / "ref_audio_3.wav", "Clone 1"),
-    ("ref_audio_2", _ASSET_DIR / "ref_audio_2.wav", "Clone 2"),
-    ("ref_audio", _ASSET_DIR / "ref_audio.wav", "Clone 3"),
+    ("ref_audio_3", _ASSET_DIR / "你們這個火災保險是專門給我們這種小餐廳用的嗎？.wav", "Clone (azure)"),
+    ("ref_audio_2", _ASSET_DIR / "現在開始進行車牌語音合成 A, B, C, D, Q, U, V, W, Z.wav", "Clone (google2)"),
+    ("ref_audio_1", _ASSET_DIR / "現在開始進行車牌語音合成，你要逐字唸出以下車牌.wav", "Clone (google1)"),
 ]
-
-_GITHUB_RAW = "https://raw.githubusercontent.com/andimarafioti/faster-qwen3-tts/main"
-_PRESET_REMOTE = {
-    "ref_audio":   f"{_GITHUB_RAW}/ref_audio.wav",
-    "ref_audio_2": f"{_GITHUB_RAW}/ref_audio_2.wav",
-    "ref_audio_3": f"{_GITHUB_RAW}/ref_audio_3.wav",
-}
-_TRANSCRIPT_REMOTE = f"{_GITHUB_RAW}/samples/parity/icl_transcripts.txt"
-
-
-def _fetch_preset_assets() -> None:
-    """Download preset wav files and transcripts from GitHub if not present locally."""
-    import urllib.request
-    _ASSET_DIR.mkdir(parents=True, exist_ok=True)
-    PRESET_TRANSCRIPTS.parent.mkdir(parents=True, exist_ok=True)
-    if not PRESET_TRANSCRIPTS.exists():
-        try:
-            urllib.request.urlretrieve(_TRANSCRIPT_REMOTE, PRESET_TRANSCRIPTS)
-        except Exception as e:
-            print(f"Warning: could not fetch transcripts: {e}")
-    for key, path, _ in PRESET_REFS:
-        if not path.exists() and key in _PRESET_REMOTE:
-            try:
-                urllib.request.urlretrieve(_PRESET_REMOTE[key], path)
-                print(f"Downloaded {path.name}")
-            except Exception as e:
-                print(f"Warning: could not fetch {key}: {e}")
 
 _preset_refs: dict[str, dict] = {}
 
@@ -160,6 +133,7 @@ app.add_middleware(
 _model_cache: OrderedDict[str, FasterQwen3TTS] = OrderedDict()
 _model_cache_max: int = int(os.environ.get("MODEL_CACHE_SIZE", "2"))
 _active_model_name: str | None = None
+_device: str = os.environ.get("DEVICE", "cuda")
 _loading = False
 _ref_cache: dict[str, str] = {}
 _ref_cache_lock = threading.Lock()
@@ -214,7 +188,6 @@ def _get_cached_ref_path(content: bytes) -> str:
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
-_fetch_preset_assets()
 _load_preset_refs()
 
 @app.get("/")
@@ -310,7 +283,7 @@ async def load_model(model_id: str = Form(...)):
                 print(f"Model cache full — evicted: {evicted}")
             new_model = FasterQwen3TTS.from_pretrained(
                 model_id,
-                device="cuda",
+                device=_device,
                 dtype=torch.bfloat16,
             )
             print("Capturing CUDA graphs…")
@@ -670,6 +643,11 @@ def main():
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 7860)))
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument(
+        "--device",
+        default=os.environ.get("DEVICE", "cuda"),
+        help="PyTorch device for model inference (e.g. cuda, cuda:0, cuda:1)",
+    )
+    parser.add_argument(
         "--no-preload",
         action="store_true",
         help="Skip model loading at startup (load via UI instead)",
@@ -677,11 +655,12 @@ def main():
     args = parser.parse_args()
 
     if not args.no_preload:
-        global _active_model_name, _parakeet
+        global _active_model_name, _parakeet, _device
+        _device = args.device
         print(f"Loading model: {args.model}")
         _startup_model = FasterQwen3TTS.from_pretrained(
             args.model,
-            device="cuda",
+            device=_device,
             dtype=torch.bfloat16,
         )
         print("Capturing CUDA graphs…")
@@ -692,7 +671,7 @@ def main():
         print("TTS model ready.")
 
         print("Loading transcription model (nano-parakeet)…")
-        _parakeet = _parakeet_from_pretrained(device="cuda")
+        _parakeet = _parakeet_from_pretrained(device=_device)
         print("Transcription model ready.")
 
         print(f"Ready. Open http://localhost:{args.port}")
