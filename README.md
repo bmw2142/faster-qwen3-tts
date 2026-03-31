@@ -12,6 +12,8 @@ pip install faster-qwen3-tts
 
 **PyTorch compatibility note:** CUDA-graph capture in the fast path is not reliable on `torch<=2.5.0` for this project (capture can fail with "operation not permitted when stream is capturing"). We validated `2.5.1+` as working and set that as the minimum supported version.
 
+**Blackwell note:** RTX 50xx / Blackwell GPUs need CUDA 12.8 PyTorch wheels. If the default setup fails on those cards, install a `cu128` PyTorch build (PyTorch 2.7+).
+
 ## Quick Start
 
 ### Python
@@ -253,6 +255,7 @@ The 12 Hz codec uses a causal `chunked_decode`: each frame is reconstructed usin
 The original Qwen3TTS implementation supports two mode of generation. It either takes the full input text and prepares the utterance, or it feeds the text progressively. This is the `non_streaming_mode` parameter in the generation methods. The name is maintained from the Qwen3TTS implementation, but I understand it might bring some headaches since here we also have general audio output streaming.
 `generate_voice_clone` now defaults to `non_streaming_mode=False` to match upstream step-by-step text feeding during decode.
 `generate_voice_clone_streaming` also defaults to `non_streaming_mode=False`. Set either method to `True` to pre-fill the full target text before decode for the old behavior.
+`generate_custom_voice`, `generate_custom_voice_streaming`, `generate_voice_design`, and `generate_voice_design_streaming` default to `non_streaming_mode=True` to match the upstream CustomVoice and VoiceDesign defaults.
 
 **Performance impact (RTX 4090, 1.7B, ICL, chunk_size=8):** TTFA is unchanged (≈159ms ± 1ms), and RTF is effectively the same (nsm=False: 4.87 ± 0.01, nsm=True: 4.85 ± 0.01).
 
