@@ -4,7 +4,7 @@ Faster Qwen3-TTS Demo Server
 
 Usage:
     python demo/server.py
-    python demo/server.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --port 7860 --device cuda:1
+    python demo/server.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --port 8067 --device cuda:1
     python demo/server.py --no-preload  # skip startup model load
 """
 
@@ -63,12 +63,15 @@ BASE_DIR = Path(__file__).resolve().parent
 # Assets that need to be downloaded at runtime go to a writable directory.
 # /app is read-only in HF Spaces; fall back to /tmp.
 _ASSET_DIR = Path(os.environ.get("ASSET_DIR", "/data/jp-storage/GG/TTS_Project/faster-qwen3-tts/ref_audio"))
-PRESET_TRANSCRIPTS = _ASSET_DIR / "icl_transcripts.txt"
+PRESET_TRANSCRIPTS = _ASSET_DIR / "transcripts.txt"
 PRESET_REFS = [
-    ("ref_audio_3", _ASSET_DIR / "你們這個火災保險是專門給我們這種小餐廳用的嗎？.wav", "Clone (azure)"),
-    ("ref_audio_2", _ASSET_DIR / "現在開始進行車牌語音合成 A, B, C, D, Q, U, V, W, Z.wav", "Clone (google2)"),
-    ("ref_audio_1", _ASSET_DIR / "現在開始進行車牌語音合成，你要逐字唸出以下車牌.wav", "Clone (google1)"),
+    ("ref_audio_1", _ASSET_DIR / "你們這個火災保險是專門給我們這種小餐廳用的嗎？.wav", "Clone (azure)"),
+    ("ref_audio_2", _ASSET_DIR / "現在開始進行車牌語音合成，你要逐字唸出以下車牌.wav", "Clone (google)"),
+    ("ref_audio_3", _ASSET_DIR / "jana_請問您的車牌號碼16000.wav", "Clone (jana)"),
 ]
+
+REF_CACHE_DIR = Path("/data/jp-storage/GG/TTS_Project/faster-qwen3-tts/demo/ref_cache")
+REF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _preset_refs: dict[str, dict] = {}
 
@@ -112,10 +115,10 @@ def _prime_preset_voice_cache(model: FasterQwen3TTS) -> None:
         for xvec_only in (True, False):
             try:
                 model._prepare_generation(
-                    text="Hello.",
+                    text="你好。",
                     ref_audio=ref_path,
                     ref_text=ref_text,
-                    language="English",
+                    language="Chinese",
                     xvec_only=xvec_only,
                     non_streaming_mode=True,
                 )
@@ -178,7 +181,7 @@ def _get_cached_ref_path(content: bytes) -> str:
         cached = _ref_cache.get(digest)
         if cached and os.path.exists(cached):
             return cached
-        tmp_dir = Path(tempfile.gettempdir())
+        tmp_dir = REF_CACHE_DIR
         path = tmp_dir / f"faster_qwen3_tts_ref_{digest}.wav"
         if not path.exists():
             path.write_bytes(content)
@@ -309,7 +312,7 @@ async def load_model(model_id: str = Form(...)):
 @app.post("/generate/stream")
 async def generate_stream(
     text: str = Form(...),
-    language: str = Form("English"),
+    language: str = Form("Chinese"),
     mode: str = Form("voice_clone"),
     ref_text: str = Form(""),
     speaker: str = Form(""),
@@ -530,7 +533,7 @@ async def generate_stream(
 @app.post("/generate")
 async def generate_non_streaming(
     text: str = Form(...),
-    language: str = Form("English"),
+    language: str = Form("Chinese"),
     mode: str = Form("voice_clone"),
     ref_text: str = Form(""),
     speaker: str = Form(""),

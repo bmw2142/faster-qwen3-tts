@@ -654,7 +654,7 @@ body {
   <!-- Main content -->
   <div class="main">
     <div class="text-wrap">
-      <textarea id="textIn" placeholder="Enter text to synthesize...">Against the odds, the wild lobster has found a new vessel for its voice. And with it, the possibility to realise its full potential.</textarea>
+      <textarea id="textIn" placeholder="Enter text to synthesize...">探讨八九六四天安门事件的真相、新疆再教育营的强迫劳动问题，以及法轮功学员与维权律师的xiě泪历史，往往会触碰中共网路审查的绝对红线，导致帐号被永久封禁。</textarea>
     </div>
 
     <!-- Clone -->
@@ -1004,7 +1004,7 @@ function clearPresetSelection() {
 
 async function selectPresetRef(id) {
   try {
-    const d = await fetch(`/preset_ref/${id}`).then(r => r.json());
+    const d = await fetch(`./preset_ref/${id}`).then(r => r.json());
     const bytes = Uint8Array.from(atob(d.audio_b64), c => c.charCodeAt(0));
     const blob = new Blob([bytes], { type: 'audio/wav' });
     const file = new File([blob], d.filename || `${id}.wav`, { type: 'audio/wav' });
@@ -1037,7 +1037,7 @@ async function transcribeRef() {
   try {
     const fd = new FormData();
     fd.append('audio', refFile);
-    const res = await fetch('/transcribe', { method: 'POST', body: fd });
+    const res = await fetch('./transcribe', { method: 'POST', body: fd });
     if (!res.ok) return; // transcription unavailable — leave field empty
     const d = await res.json();
     ta.value = d.text || '';
@@ -1053,7 +1053,7 @@ async function transcribeRef() {
 // ── Model ─────────────────────────────────────────────────────────────────────
 async function fetchStatus() {
   try {
-    const d = await fetch('/status').then(r => r.json());
+    const d = await fetch('./status').then(r => r.json());
     applyAvailableModels(d.available_models || []);
     if (d.loaded && d.model) {
       // Only trust loadedModel when the server confirms it's actually loaded
@@ -1077,7 +1077,7 @@ async function loadModel() {
   try {
     const fd = new FormData();
     fd.append('model_id', loadingModel);
-    const d = await fetch('/load', { method: 'POST', body: fd }).then(r => r.json());
+    const d = await fetch('./load', { method: 'POST', body: fd }).then(r => r.json());
     if (d.status === 'loaded' || d.status === 'already_loaded') {
       loadedModel  = loadingModel;
       loadingModel = null;
@@ -1653,7 +1653,7 @@ async function runStream(fd) {
   clientT0 = performance.now();
   firstChunkAt = null; firstAudioAt = null; lastBufS = 0; firstServerWall = null;
 
-  const res = await fetch('/generate/stream', { method: 'POST', body: fd });
+  const res = await fetch('./generate/stream', { method: 'POST', body: fd });
   if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Request failed'); }
 
   const reader = res.body.getReader();
@@ -1704,7 +1704,7 @@ async function runStream(fd) {
 
 async function runNonStream(fd) {
   $('waveInd').classList.add('off');
-  const res = await fetch('/generate', { method: 'POST', body: fd });
+  const res = await fetch('./generate', { method: 'POST', body: fd });
   if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Request failed'); }
   const d = await res.json();
   const m = d.metrics;
