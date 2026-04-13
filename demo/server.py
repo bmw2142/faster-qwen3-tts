@@ -193,6 +193,13 @@ def _default_non_streaming_mode_for_mode(mode: str) -> bool:
     return mode != "voice_clone"
 
 
+def _set_current_cuda_device(device: str) -> None:
+    """Keep PyTorch's current CUDA device aligned with the requested device."""
+    if not device.startswith("cuda") or not torch.cuda.is_available():
+        return
+    torch.cuda.set_device(torch.device(device))
+
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 _load_preset_refs()
@@ -222,7 +229,8 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         wav_t = torch.from_numpy(wav)
         if sr != 16000:
             wav_t = torchaudio.functional.resample(wav_t.unsqueeze(0), sr, 16000).squeeze(0)
-        return _parakeet.transcribe(wav_t.cuda())
+        _set_current_cuda_device(_device)
+        return _parakeet.transcribe(wav_t.to(_device))
 
     text = await asyncio.to_thread(run)
     return {"text": text}
@@ -288,6 +296,7 @@ async def load_model(model_id: str = Form(...)):
             if len(_model_cache) >= _model_cache_max:
                 evicted, _ = _model_cache.popitem(last=False)
                 print(f"Model cache full — evicted: {evicted}")
+            _set_current_cuda_device(_device)
             new_model = FasterQwen3TTS.from_pretrained(
                 model_id,
                 device=_device,
@@ -678,6 +687,7 @@ def main():
     if not args.no_preload:
         global _active_model_name, _parakeet, _device
         _device = args.device
+        _set_current_cuda_device(_device)
         print(f"Loading model: {args.model}")
         _startup_model = FasterQwen3TTS.from_pretrained(
             args.model,

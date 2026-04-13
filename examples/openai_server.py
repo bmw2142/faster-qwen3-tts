@@ -69,6 +69,7 @@ voices: dict = {}
 default_voice: Optional[str] = None
 SAMPLE_RATE = 24000  # updated once the model loads
 _model_lock = threading.Lock()  # prevent concurrent GPU inference
+_device = "cuda"
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -138,6 +139,13 @@ def _to_mp3_bytes(pcm: np.ndarray, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
+def _set_current_cuda_device(device: str) -> None:
+    """Keep PyTorch's current CUDA device aligned with the configured server device."""
+    if not device.startswith("cuda") or not torch.cuda.is_available():
+        return
+    torch.cuda.set_device(torch.device(device))
+
+
 # ---------------------------------------------------------------------------
 # Voice resolution
 # ---------------------------------------------------------------------------
@@ -178,6 +186,7 @@ async def _stream_chunks(voice_cfg: dict, text: str) -> AsyncGenerator[bytes, No
 
     def producer():
         try:
+            _set_current_cuda_device(_device)
             with _model_lock:
                 for chunk, _sr, _timing in tts_model.generate_voice_clone_streaming(
                     text=text,
@@ -243,6 +252,7 @@ async def create_speech(req: SpeechRequest):
         loop = asyncio.get_event_loop()
 
         def _generate():
+            _set_current_cuda_device(_device)
             with _model_lock:
                 return tts_model.generate_voice_clone(
                     text=req.input,
@@ -310,9 +320,10 @@ def _parse_args():
 
 
 def main():
-    global tts_model, voices, default_voice, SAMPLE_RATE
+    global tts_model, voices, default_voice, SAMPLE_RATE, _device
 
     args = _parse_args()
+    _device = args.device
 
     # Build voice registry
     if args.voices:
@@ -340,6 +351,7 @@ def main():
     from faster_qwen3_tts import FasterQwen3TTS
 
     logger.info("Loading model %s on %s …", args.model, args.device)
+    _set_current_cuda_device(_device)
     tts_model = FasterQwen3TTS.from_pretrained(
         args.model,
         device=args.device,
