@@ -55,7 +55,14 @@ from pydantic import BaseModel
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-logging.basicConfig(level=logging.INFO)
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format=LOG_FORMAT,
+    datefmt=LOG_DATE_FORMAT,
+)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
