@@ -13,6 +13,7 @@ For example:
 """
 
 import argparse
+import datetime
 import json
 from pathlib import Path
 from urllib import error, request
@@ -68,6 +69,78 @@ def parse_args() -> argparse.Namespace:
         choices=["wav", "pcm", "mp3"],
     )
     parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=2048,
+        help="Maximum number of codec steps to generate (default: 2048).",
+    )
+    parser.add_argument(
+        "--min-new-tokens",
+        type=int,
+        default=2,
+        help="Minimum number of codec steps before EOS is allowed (default: 2).",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.9,
+        help="Sampling temperature (default: 0.9).",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=50,
+        help="Top-k sampling cutoff (default: 50).",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=1.0,
+        help="Top-p nucleus sampling cutoff (default: 1.0).",
+    )
+    parser.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=1.05,
+        help="Repetition penalty (default: 1.05).",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=12,
+        help="Streaming chunk size in codec steps (default: 12).",
+    )
+    parser.add_argument(
+        "--instruct",
+        default=None,
+        help="Optional instruction prompt, for example dialect or style guidance.",
+    )
+    parser.add_argument(
+        "--xvec-only",
+        action="store_true",
+        help="Use x-vector-only voice cloning instead of full ICL prompt.",
+    )
+    parser.add_argument(
+        "--non-streaming-mode",
+        action="store_true",
+        help="Prefill the full target text before decode.",
+    )
+    parser.add_argument(
+        "--no-append-silence",
+        action="store_true",
+        help="Disable the default trailing silence added to reference audio in ICL mode.",
+    )
+    parser.add_argument(
+        "--parity-mode",
+        action="store_true",
+        help="Use parity streaming mode instead of the fast CUDA-graph path.",
+    )
+    parser.add_argument(
+        "--no-sample",
+        action="store_true",
+        help="Disable sampling and use greedy decoding.",
+    )
+    parser.add_argument(
         "--count",
         type=int,
         default=10,
@@ -94,7 +167,6 @@ LETTER_PINYIN: dict[str, str] = {
     "E": "yī",
     "G": "jū",
     "K": "kēi",
-    "V": "ve",
     "Y": "wāi",
     "Z": "lì",
 }
@@ -120,12 +192,25 @@ def to_spoken_text(raw_id: str) -> str:
     return prefix + " " + ", ".join(groups)
 
 
-def synthesize_one(url: str, model: str, voice: str, fmt: str, text: str) -> bytes:
+def synthesize_one(url: str, model: str, voice: str, fmt: str, text: str, args: argparse.Namespace) -> bytes:
     payload = {
         "model": model,
         "input": text,
         "voice": voice,
         "response_format": fmt,
+        "max_new_tokens": args.max_new_tokens,
+        "min_new_tokens": args.min_new_tokens,
+        "temperature": args.temperature,
+        "top_k": args.top_k,
+        "top_p": args.top_p,
+        "do_sample": not args.no_sample,
+        "repetition_penalty": args.repetition_penalty,
+        "chunk_size": args.chunk_size,
+        "xvec_only": args.xvec_only,
+        "non_streaming_mode": args.non_streaming_mode,
+        "append_silence": not args.no_append_silence,
+        "parity_mode": args.parity_mode,
+        "instruct": args.instruct,
     }
     body = json.dumps(payload).encode("utf-8")
     http_request = request.Request(
@@ -159,6 +244,20 @@ def main() -> None:
     args = parse_args()
     if args.count <= 0:
         raise SystemExit("--count must be greater than 0.")
+    if args.max_new_tokens <= 0:
+        raise SystemExit("--max-new-tokens must be greater than 0.")
+    if args.min_new_tokens < 0:
+        raise SystemExit("--min-new-tokens must be non-negative.")
+    if args.chunk_size <= 0:
+        raise SystemExit("--chunk-size must be greater than 0.")
+    if args.temperature <= 0:
+        raise SystemExit("--temperature must be greater than 0.")
+    if args.top_k < 0:
+        raise SystemExit("--top-k must be non-negative.")
+    if not 0 < args.top_p <= 1.0:
+        raise SystemExit("--top-p must be in the range (0, 1].")
+    if args.repetition_penalty <= 0:
+        raise SystemExit("--repetition-penalty must be greater than 0.")
 
     port = _MODEL_PORTS[args.model_size]
     url = args.url or f"http://127.0.0.1:{port}/v1/audio/speech"
@@ -169,7 +268,8 @@ def main() -> None:
     if not ids:
         raise SystemExit("No valid IDs found.")
 
-    output_dir = Path(args.output_dir)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    output_dir = Path(args.output_dir) / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = args.response_format
     width = max(2, len(str(args.count)))
@@ -187,6 +287,7 @@ def main() -> None:
                 args.voice,
                 args.response_format,
                 spoken_text,
+                args,
             )
             filename = f"{raw_id}_{model_tag}{prefix_tag}_{index:0{width}d}.{suffix}"
             output_path = output_dir / filename

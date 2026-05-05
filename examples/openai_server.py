@@ -89,6 +89,19 @@ class SpeechRequest(BaseModel):
     voice: str = "alloy"
     response_format: str = "wav"  # wav | pcm | mp3
     speed: float = 1.0           # accepted but not yet applied
+    max_new_tokens: int = 2048
+    min_new_tokens: int = 2
+    temperature: float = 0.9
+    top_k: int = 50
+    top_p: float = 1.0
+    do_sample: bool = True
+    repetition_penalty: float = 1.05
+    chunk_size: Optional[int] = None
+    xvec_only: bool = False
+    non_streaming_mode: bool = False
+    append_silence: bool = True
+    parity_mode: bool = False
+    instruct: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +196,7 @@ def resolve_voice(voice_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def _stream_chunks(voice_cfg: dict, text: str) -> AsyncGenerator[bytes, None]:
+async def _stream_chunks(voice_cfg: dict, req: SpeechRequest) -> AsyncGenerator[bytes, None]:
     """
     Run generate_voice_clone_streaming in a background thread and yield
     raw PCM bytes for each chunk as they arrive.
@@ -196,12 +209,23 @@ async def _stream_chunks(voice_cfg: dict, text: str) -> AsyncGenerator[bytes, No
             _set_current_cuda_device(_device)
             with _model_lock:
                 for chunk, _sr, _timing in tts_model.generate_voice_clone_streaming(
-                    text=text,
+                    text=req.input,
                     language=voice_cfg.get("language", "Auto"),
                     ref_audio=voice_cfg["ref_audio"],
                     ref_text=voice_cfg.get("ref_text", ""),
+                    max_new_tokens=req.max_new_tokens,
+                    min_new_tokens=req.min_new_tokens,
+                    temperature=req.temperature,
+                    top_k=req.top_k,
+                    top_p=req.top_p,
+                    do_sample=req.do_sample,
+                    repetition_penalty=req.repetition_penalty,
                     chunk_size=voice_cfg.get("chunk_size", 12),
-                    non_streaming_mode=False,
+                    xvec_only=req.xvec_only,
+                    non_streaming_mode=req.non_streaming_mode,
+                    append_silence=req.append_silence,
+                    parity_mode=req.parity_mode,
+                    instruct=req.instruct,
                 ):
                     q.put(chunk)
         except Exception as exc:
@@ -238,6 +262,20 @@ async def create_speech(req: SpeechRequest):
         raise HTTPException(status_code=503, detail="Model not loaded")
     if not req.input.strip():
         raise HTTPException(status_code=400, detail="'input' text is empty")
+    if req.max_new_tokens <= 0:
+        raise HTTPException(status_code=400, detail="'max_new_tokens' must be greater than 0")
+    if req.min_new_tokens < 0:
+        raise HTTPException(status_code=400, detail="'min_new_tokens' must be non-negative")
+    if req.chunk_size is not None and req.chunk_size <= 0:
+        raise HTTPException(status_code=400, detail="'chunk_size' must be greater than 0")
+    if req.temperature <= 0:
+        raise HTTPException(status_code=400, detail="'temperature' must be greater than 0")
+    if req.top_k < 0:
+        raise HTTPException(status_code=400, detail="'top_k' must be non-negative")
+    if not 0 < req.top_p <= 1.0:
+        raise HTTPException(status_code=400, detail="'top_p' must be in the range (0, 1]")
+    if req.repetition_penalty <= 0:
+        raise HTTPException(status_code=400, detail="'repetition_penalty' must be greater than 0")
 
     voice_cfg = resolve_voice(req.voice)
     fmt = req.response_format.lower()
@@ -266,6 +304,17 @@ async def create_speech(req: SpeechRequest):
                     language=voice_cfg.get("language", "Auto"),
                     ref_audio=voice_cfg["ref_audio"],
                     ref_text=voice_cfg.get("ref_text", ""),
+                    max_new_tokens=req.max_new_tokens,
+                    min_new_tokens=req.min_new_tokens,
+                    temperature=req.temperature,
+                    top_k=req.top_k,
+                    top_p=req.top_p,
+                    do_sample=req.do_sample,
+                    repetition_penalty=req.repetition_penalty,
+                    xvec_only=req.xvec_only,
+                    non_streaming_mode=req.non_streaming_mode,
+                    append_silence=req.append_silence,
+                    instruct=req.instruct,
                 )
 
         audio_arrays, sr = await loop.run_in_executor(None, _generate)
@@ -276,7 +325,9 @@ async def create_speech(req: SpeechRequest):
     async def audio_stream():
         if fmt == "wav":
             yield _wav_header(SAMPLE_RATE)  # stream with unknown data length
-        async for raw_chunk in _stream_chunks(voice_cfg, req.input):
+        stream_voice_cfg = dict(voice_cfg)
+        stream_voice_cfg["chunk_size"] = req.chunk_size if req.chunk_size is not None else voice_cfg.get("chunk_size", 12)
+        async for raw_chunk in _stream_chunks(stream_voice_cfg, req):
             yield raw_chunk
 
     return StreamingResponse(audio_stream(), media_type=content_type)
