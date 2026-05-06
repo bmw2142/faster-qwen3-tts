@@ -44,6 +44,7 @@ import queue
 import struct
 import sys
 import threading
+import time
 from typing import AsyncGenerator, Optional
 
 import numpy as np
@@ -139,6 +140,16 @@ def _to_wav_bytes(pcm: np.ndarray, sample_rate: int) -> bytes:
     return _wav_header(sample_rate, len(raw)) + raw
 
 
+def _audio_duration_s(audio, sample_rate: int) -> float:
+    """Return the duration of a generated audio chunk/list in seconds."""
+    if sample_rate <= 0:
+        return 0.0
+    if isinstance(audio, np.ndarray):
+        return len(audio.squeeze()) / sample_rate
+    parts = [np.asarray(part).squeeze() for part in audio if len(part) > 0]
+    return sum(len(part) for part in parts) / sample_rate if parts else 0.0
+
+
 def _to_mp3_bytes(pcm: np.ndarray, sample_rate: int) -> bytes:
     """Convert float32 numpy array to MP3 bytes (requires pydub + ffmpeg)."""
     try:
@@ -205,10 +216,16 @@ async def _stream_chunks(voice_cfg: dict, req: SpeechRequest) -> AsyncGenerator[
     _DONE = object()
 
     def producer():
+        t0 = time.perf_counter()
+        chunks = 0
+        total_audio_s = 0.0
+        total_gen_ms = 0.0
+        ttfa_ms = 0.0
+        voice_clone_ms = 0.0
         try:
             _set_current_cuda_device(_device)
             with _model_lock:
-                for chunk, _sr, _timing in tts_model.generate_voice_clone_streaming(
+                gen = tts_model.generate_voice_clone_streaming(
                     text=req.input,
                     language=voice_cfg.get("language", "Auto"),
                     ref_audio=voice_cfg["ref_audio"],
@@ -226,11 +243,40 @@ async def _stream_chunks(voice_cfg: dict, req: SpeechRequest) -> AsyncGenerator[
                     append_silence=req.append_silence,
                     parity_mode=req.parity_mode,
                     instruct=req.instruct,
-                ):
+                )
+                for chunk, sr, timing in gen:
+                    model_ms = timing.get("prefill_ms", 0) + timing.get("decode_ms", 0)
+                    if chunks == 0:
+                        wall_first_ms = (time.perf_counter() - t0) * 1000
+                        voice_clone_ms = max(0.0, wall_first_ms - model_ms)
+                    total_gen_ms += model_ms
+                    if not ttfa_ms:
+                        ttfa_ms = total_gen_ms
+                    total_audio_s += _audio_duration_s(chunk, sr)
+                    chunks += 1
                     q.put(chunk)
         except Exception as exc:
             q.put(exc)
         finally:
+            total_ms = (time.perf_counter() - t0) * 1000
+            rtf = total_audio_s / (total_gen_ms / 1000) if total_gen_ms > 0 else 0.0
+            wall_rtf = total_audio_s / (total_ms / 1000) if total_ms > 0 else 0.0
+            logger.info(
+                "TTS complete | format=%s voice=%s chars=%d chunks=%d "
+                "ttfa_ms=%d voice_clone_ms=%d model_ms=%d total_ms=%d "
+                "audio_s=%.3f rtf=%.3f wall_rtf=%.3f",
+                req.response_format,
+                req.voice,
+                len(req.input),
+                chunks,
+                round(ttfa_ms),
+                round(voice_clone_ms),
+                round(total_gen_ms),
+                round(total_ms),
+                total_audio_s,
+                rtf,
+                wall_rtf,
+            )
             q.put(_DONE)
 
     thread = threading.Thread(target=producer, daemon=True)
@@ -298,8 +344,9 @@ async def create_speech(req: SpeechRequest):
 
         def _generate():
             _set_current_cuda_device(_device)
+            t0 = time.perf_counter()
             with _model_lock:
-                return tts_model.generate_voice_clone(
+                audio_arrays, sr = tts_model.generate_voice_clone(
                     text=req.input,
                     language=voice_cfg.get("language", "Auto"),
                     ref_audio=voice_cfg["ref_audio"],
@@ -316,6 +363,28 @@ async def create_speech(req: SpeechRequest):
                     append_silence=req.append_silence,
                     instruct=req.instruct,
                 )
+            audio = audio_arrays[0] if audio_arrays else np.zeros(1, dtype=np.float32)
+            elapsed = time.perf_counter() - t0
+            audio_s = _audio_duration_s(audio, sr)
+            rtf = audio_s / elapsed if elapsed > 0 else 0.0
+            wall_rtf = rtf
+            logger.info(
+                "TTS complete | format=%s voice=%s chars=%d chunks=%d "
+                "ttfa_ms=%d voice_clone_ms=%d model_ms=%d total_ms=%d "
+                "audio_s=%.3f rtf=%.3f wall_rtf=%.3f",
+                req.response_format,
+                req.voice,
+                len(req.input),
+                1,
+                round(elapsed * 1000),
+                0,
+                round(elapsed * 1000),
+                round(elapsed * 1000),
+                audio_s,
+                rtf,
+                wall_rtf,
+            )
+            return audio_arrays, sr
 
         audio_arrays, sr = await loop.run_in_executor(None, _generate)
         audio = audio_arrays[0] if audio_arrays else np.zeros(1, dtype=np.float32)

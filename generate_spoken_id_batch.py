@@ -15,6 +15,7 @@ For example:
 import argparse
 import datetime
 import json
+import time
 from pathlib import Path
 from urllib import error, request
 
@@ -273,6 +274,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = args.response_format
     width = max(2, len(str(args.count)))
+    generation_times_s: list[float] = []
 
     for raw_id in ids:
         spoken_text = to_spoken_text(raw_id)
@@ -281,6 +283,7 @@ def main() -> None:
         prefix_tag = "_with_prefix" if args.with_prefix else ""
         print(f"{raw_id} -> {spoken_text}")
         for index in range(1, args.count + 1):
+            t0 = time.perf_counter()
             audio_bytes = synthesize_one(
                 url,
                 args.model,
@@ -292,7 +295,13 @@ def main() -> None:
             filename = f"{raw_id}_{model_tag}{prefix_tag}_{index:0{width}d}.{suffix}"
             output_path = output_dir / filename
             output_path.write_bytes(audio_bytes)
-            print(f"Saved {output_path}")
+            elapsed_s = time.perf_counter() - t0
+            generation_times_s.append(elapsed_s)
+            print(f"Saved {output_path}  generation_time={elapsed_s:.3f}s")
+
+    if generation_times_s:
+        avg_s = sum(generation_times_s) / len(generation_times_s)
+        print(f"Average generation time: {avg_s:.3f}s over {len(generation_times_s)} file(s)")
 
 
 if __name__ == "__main__":
