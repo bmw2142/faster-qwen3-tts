@@ -279,7 +279,9 @@ def main() -> None:
     for raw_id in ids:
         spoken_text = to_spoken_text(raw_id)
         if args.with_prefix:
-            spoken_text = f"身分证号码是，{spoken_text}，请问正确吗"
+            # 身分證號碼是，{spoken_text}，請問正確嗎？
+            # 身分证号码是，{spoken_text}，请问正确吗？
+            spoken_text = f"身分證號碼是，{spoken_text}，請問正確嗎？"
         prefix_tag = "_with_prefix" if args.with_prefix else ""
         print(f"{raw_id} -> {spoken_text}")
         for index in range(1, args.count + 1):
