@@ -155,7 +155,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--with-prefix",
         action="store_true",
-        help="Wrap spoken text as '身分证号码是，{id}，请问正确吗'.",
+        help="Wrap spoken text as '身分證號碼是，{id}'.",
+    )
+    parser.add_argument(
+        "--with-suffix",
+        action="store_true",
+        help="Wrap spoken text as '{id}，請問正確嗎？'.",
     )
     return parser.parse_args()
 
@@ -278,11 +283,14 @@ def main() -> None:
 
     for raw_id in ids:
         spoken_text = to_spoken_text(raw_id)
+        # 身分證號碼是，{spoken_text}，請問正確嗎？
+        # 身分证号码是，{spoken_text}，请问正确吗？
         if args.with_prefix:
-            # 身分證號碼是，{spoken_text}，請問正確嗎？
-            # 身分证号码是，{spoken_text}，请问正确吗？
-            spoken_text = f"身分證號碼是，{spoken_text}，請問正確嗎？"
+            spoken_text = f"身分證號碼是，{spoken_text}"
         prefix_tag = "_with_prefix" if args.with_prefix else ""
+        if args.with_suffix:
+            spoken_text = f"{spoken_text}，請問正確嗎？"
+        suffix_tag = "_with_suffix" if args.with_suffix else ""
         print(f"{raw_id} -> {spoken_text}")
         for index in range(1, args.count + 1):
             t0 = time.perf_counter()
@@ -294,7 +302,7 @@ def main() -> None:
                 spoken_text,
                 args,
             )
-            filename = f"{raw_id}_{model_tag}{prefix_tag}_{index:0{width}d}.{suffix}"
+            filename = f"{raw_id}_{model_tag}{prefix_tag}{suffix_tag}_{index:0{width}d}.{suffix}"
             output_path = output_dir / filename
             output_path.write_bytes(audio_bytes)
             elapsed_s = time.perf_counter() - t0
