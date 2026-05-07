@@ -9,7 +9,7 @@ Examples:
 
 For example:
     S199279817 -> S一九九二七九八一七
-    Output files: S199279817_01.wav, S199279817_02.wav, ...
+    Output files are grouped by model/prefix/suffix settings, then timestamp.
 """
 
 import argparse
@@ -246,6 +246,18 @@ _MODEL_PORTS: dict[str, int] = {"0.6B": 8011, "1.7B": 8021}
 _MODEL_TAGS: dict[str, str] = {"0.6B": "0_6B", "1.7B": "1_7B"}
 
 
+def build_output_dir(args: argparse.Namespace, model_tag: str, timestamp: str) -> Path:
+    if args.with_prefix and args.with_suffix:
+        variant_dir = "with_prefix_with_suffix"
+    elif args.with_prefix:
+        variant_dir = "with_prefix"
+    elif args.with_suffix:
+        variant_dir = "with_suffix"
+    else:
+        variant_dir = "plain"
+    return Path(args.output_dir) / model_tag / variant_dir / timestamp
+
+
 def main() -> None:
     args = parse_args()
     if args.count <= 0:
@@ -275,7 +287,7 @@ def main() -> None:
         raise SystemExit("No valid IDs found.")
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-    output_dir = Path(args.output_dir) / timestamp
+    output_dir = build_output_dir(args, model_tag, timestamp)
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = args.response_format
     width = max(2, len(str(args.count)))
