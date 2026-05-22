@@ -1,0 +1,52 @@
+{
+  "default": {
+    "ref_audio": "ref_audio/你們這個火災保險是專門給我們這種小餐廳用的嗎？.wav",
+    "ref_text": "你們這個火災保險是專門給我們這種小餐廳用的嗎？",
+    "language": "Chinese"
+  },
+  "restaurant": {
+    "ref_audio": "ref_audio/你們這個火災保險是專門給我們這種小餐廳用的嗎？.wav",
+    "ref_text": "你們這個火災保險是專門給我們這種小餐廳用的嗎？",
+    "language": "Chinese"
+  },
+  "plate_abcd_quvwz": {
+    "ref_audio": "ref_audio/現在開始進行車牌語音合成 A, B, C, D, Q, U, V, W, Z.wav",
+    "ref_text": "現在開始進行車牌語音合成 A, B, C, D, Q, U, V, W, Z",
+    "language": "Chinese"
+  },
+  "id_LQRJ_01": {
+    "ref_audio": "ref_audio/身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三，请问正确吗_377456e3.wav",
+    "ref_text": "身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三，请问正确吗？",
+    "language": "Chinese"
+  },
+  "id_LQRJ_02": {
+    "ref_audio": "ref_audio/身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三，请问正确吗_58f65570.wav",
+    "ref_text": "身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三，请问正确吗？",
+    "language": "Chinese"
+  },
+  "id_LQR_01": {
+    "ref_audio": "ref_audio/身分证号码是，L 一四三, Q 七零三,  R 五四二，请问正确吗_caad2.wav",
+    "ref_text": "身分证号码是，L 一四三, Q 七零三,  R 五四二，请问正确吗？",
+    "language": "Chinese"
+  },
+  "id_LQRM_0422_01": {
+    "ref_audio": "ref_audio/身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，请问正确吗？6b7badc_0422.wav",
+    "ref_text": "身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，请问正确吗？",
+    "language": "Chinese"
+  },
+  "id_LQRMV_0422_01": {
+    "ref_audio": "ref_audio/身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，V 六九八，请问正确吗？_0422_943131.wav",
+    "ref_text": "身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，V 六九八，请问正确吗",
+    "language": "Chinese"
+  },
+  "id_LQRMV_0423_04": {
+    "ref_audio": "ref_audio/身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，V 六九八，请问正确吗？_0423_04.wav",
+    "ref_text": "身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，V 六九八，请问正确吗",
+    "language": "Chinese"
+  },
+  "id_LQRMV_0423_04_traditional": {
+    "ref_audio": "ref_audio/身分证号码是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，V 六九八，请问正确吗？_0423_04.wav",
+    "ref_text": "身分證號碼是，L 一四三, Q 七零三, R 五四二, J 一二三, M 二七四，V 六九八，請問正確嗎？",
+    "language": "Chinese"
+  }
+}
