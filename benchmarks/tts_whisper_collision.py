@@ -165,6 +165,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tts-concurrency", type=int, default=1)
     parser.add_argument("--worker-threads", type=int, default=4)
     parser.add_argument("--delayed-modality", choices=["asr", "tts"], default="asr")
+    parser.add_argument("--tts-mode", choices=["streaming", "non-streaming"], default="streaming")
     parser.add_argument("--chunk-size", type=int, default=8)
     parser.add_argument("--max-new-tokens", type=int, default=2048)
     parser.add_argument("--min-new-tokens", type=int, default=2)
@@ -196,6 +197,8 @@ def parse_args() -> argparse.Namespace:
         raise SystemExit("--worker-threads must be greater than 0.")
     if args.chunk_size <= 0:
         raise SystemExit("--chunk-size must be greater than 0.")
+    if args.tts_mode == "non-streaming" and args.parity_mode:
+        raise SystemExit("--parity-mode only applies to --tts-mode streaming.")
     if args.max_new_tokens <= 0:
         raise SystemExit("--max-new-tokens must be greater than 0.")
     if args.min_new_tokens < 0:
@@ -331,10 +334,15 @@ class BenchmarkModels:
         return await loop.run_in_executor(self.executor, fn, *args)
 
     def warmup(self, text: str, audio_path: Path) -> None:
-        print("Warming up TTS streaming and Whisper...", flush=True)
-        _ = self.run_tts_streaming_sync(text=text[:80], index=-1)
+        print(f"Warming up TTS {self.args.tts_mode} and Whisper...", flush=True)
+        _ = self.run_tts_sync(text=text[:80], index=-1)
         _ = self.run_asr_sync(audio_path=audio_path, index=-1)
         print("Warmup done.", flush=True)
+
+    def run_tts_sync(self, text: str, index: int) -> dict[str, Any]:
+        if self.args.tts_mode == "streaming":
+            return self.run_tts_streaming_sync(text, index)
+        return self.run_tts_non_streaming_sync(text, index)
 
     def run_tts_streaming_sync(self, text: str, index: int) -> dict[str, Any]:
         del index
@@ -382,6 +390,44 @@ class BenchmarkModels:
             "first_audio_at": first_audio_at,
             "ended_at": ended_at,
             "chunks": chunks,
+            "generated_audio_s": generated_audio_s,
+        }
+
+    def run_tts_non_streaming_sync(self, text: str, index: int) -> dict[str, Any]:
+        del index
+        set_cuda_device(self.args.device)
+        sync_cuda(self.args.device)
+        started_at = time.perf_counter()
+
+        with self._thread_lock:
+            audio_list, sr = self.tts.generate_voice_clone(
+                text=text,
+                language=self.voice.get("language", self.args.language),
+                ref_audio=self.voice["ref_audio"],
+                ref_text=self.voice.get("ref_text", ""),
+                max_new_tokens=self.args.max_new_tokens,
+                min_new_tokens=self.args.min_new_tokens,
+                temperature=self.args.temperature,
+                top_k=self.args.top_k,
+                top_p=self.args.top_p,
+                do_sample=not self.args.no_sample,
+                repetition_penalty=self.args.repetition_penalty,
+                xvec_only=self.args.xvec_only,
+                non_streaming_mode=self.args.non_streaming_mode,
+                append_silence=not self.args.no_append_silence,
+            )
+
+        sync_cuda(self.args.device)
+        ended_at = time.perf_counter()
+        generated_audio_s = 0.0
+        if audio_list:
+            parts = [np.asarray(audio).squeeze() for audio in audio_list]
+            generated_audio_s = sum(len(part) for part in parts) / sr if sr else 0.0
+        return {
+            "started_at": started_at,
+            "first_audio_at": ended_at,
+            "ended_at": ended_at,
+            "chunks": 1 if audio_list else 0,
             "generated_audio_s": generated_audio_s,
         }
 
@@ -446,7 +492,7 @@ async def run_tts_job(
     try:
         async with models.tts_lock:
             lock_acquired_at = time.perf_counter()
-            result = await models.run_in_worker(models.run_tts_streaming_sync, text, index)
+            result = await models.run_in_worker(models.run_tts_sync, text, index)
         first_audio_at = result["first_audio_at"]
         ended_at = result["ended_at"]
         generated_audio_s = result["generated_audio_s"]
@@ -742,6 +788,7 @@ def build_report(
         f"- TTS model: `{args.tts_model}`",
         f"- Whisper model: `{args.whisper_model}`",
         f"- Voice: `{voice_name}`",
+        f"- TTS mode: `{args.tts_mode}`",
         f"- TTS chunk size: `{args.chunk_size}`",
         f"- Delayed modality: `{args.delayed_modality}`",
         "",
@@ -1121,6 +1168,7 @@ def build_pairwise_report(
         f"- TTS model: `{args.tts_model}`",
         f"- Whisper model: `{args.whisper_model}`",
         f"- Voice: `{voice_name}`",
+        f"- TTS mode: `{args.tts_mode}`",
         f"- TTS chunk size: `{args.chunk_size}`",
         f"- TTS scripts: `{tts_count}`",
         f"- ASR audio files: `{asr_count}`",
